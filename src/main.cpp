@@ -36,7 +36,7 @@ int main(int argc, char * argv[]){
 
 	//now connect the VCP to the UART
 	Uart uart(port);
-	Dev serial;
+	Device serial;
 
 	if( uart.open(Uart::NONBLOCK | Uart::RDWR) < 0 ){
 		printf("Failed to open UART %d\n", port);
@@ -54,7 +54,7 @@ int main(int argc, char * argv[]){
 	}
 
 
-	if( serial.open("/dev/link-phy-usb", Dev::RDWR | Dev::NONBLOCK) < 0 ){
+	if( serial.open("/dev/link-phy-usb", Device::RDWR | Device::NONBLOCK) < 0 ){
 		printf("Failed to open USB serial port\n");
 		exit(1);
 	}
