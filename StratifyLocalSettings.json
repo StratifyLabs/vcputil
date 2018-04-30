@@ -2,6 +2,6 @@
     "LocalBuild": "build_release_v7m",
     "LocalInstallPath": "/app/.install",
     "LocalIsRam": false,
-    "LocalIsStartup": true,
+    "LocalIsStartup": false,
     "LocalProjectId": "-Kms00U6xlEby6A9NArS"
 }

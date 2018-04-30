@@ -2,103 +2,127 @@
 #include <cstdio>
 #include <sapi/sys.hpp>
 #include <sapi/hal.hpp>
+#include <sapi/chrono.hpp>
 #include <sapi/var.hpp>
 
 
+static void show_usage(const Cli & cli);
+
 int main(int argc, char * argv[]){
-	Cli cli(argc, argv);
-	cli.set_publisher("Stratify Labs, Inc");
-	cli.handle_version();
-	String escape;
-	String buffer;
-	int ret;
+    Cli cli(argc, argv);
+    cli.set_publisher("Stratify Labs, Inc");
+    cli.handle_version();
+    String escape;
+    String buffer;
+    int ret;
+    bool is_bsp;
+    bool is_echo;
 
-	int port = 0;
-	int bitrate = 115200;
-	UartPinAssignment pin_assignment;
+    UartAttr uart_attr;
 
-	if( cli.is_option("-b") ){
-		bitrate = cli.get_option_value("-b");
-	}
+    if( cli.handle_uart(uart_attr) == false ){
+        show_usage(cli);
+        exit(1);
+    }
 
-	if( cli.is_option("-p") ){
-		port = cli.get_option_value("-p");
-	}
-
-	if( cli.is_option("-rx") ){
-		pin_assignment->rx = cli.get_option_pin("-rx");
-	}
-
-	if( cli.is_option("-tx") ){
-		pin_assignment->tx = cli.get_option_pin("-tx");
-	}
+    if( cli.is_option("-bsp") ){
+        is_bsp = true;
+    } else {
+        is_bsp = false;
+    }
 
 
-	//now connect the VCP to the UART
-	Uart uart(port);
-	Device serial;
-
-	if( uart.open(Uart::NONBLOCK | Uart::RDWR) < 0 ){
-		printf("Failed to open UART %d\n", port);
-		exit(1);
-	}
-
-	ret = uart.set_attr(Uart::FLAG_SET_LINE_CODING | Uart::FLAG_IS_STOP1 | Uart::FLAG_IS_PARITY_NONE,
-			bitrate,
-			8,
-			pin_assignment);
-
-	if( ret < 0 ){
-		printf("Failed to set UART attributes\n");
-		exit(1);
-	}
+    if( cli.is_option("-echo") ){
+        is_echo = true;
+    } else {
+        is_echo = false;
+    }
 
 
-	if( serial.open("/dev/link-phy-usb", Device::RDWR | Device::NONBLOCK) < 0 ){
-		printf("Failed to open USB serial port\n");
-		exit(1);
-	}
+    //now connect the VCP to the UART
+    Uart uart(uart_attr.port());
+    Device serial;
 
-	serial.ioctl(I_FIFO_INIT);
-
-	Pin led(2,10);
-
-
-	led.init(Pin::FLAG_SET_OUTPUT);
-	led.set_value(true);
-
-	printf("Stopping Link in 5 seconds\n");
-	Timer::wait_msec(5000);
+    if( uart.open(Uart::NONBLOCK | Uart::RDWR) < 0 ){
+        printf("%s>Failed to open UART %d\n", cli.name(), uart_attr.port());
+        exit(1);
+    }
 
 
-	//stop the link thread
-	pthread_kill(1, SIGSTOP);
+    if( is_bsp ){
+        if( (ret = uart.set_attr()) < 0 ){
+            printf("%s>Failed to set BSP attributes: %d (%d)\n", cli.name(), uart.error_number(), ret);
+        }
+    } else {
+        ret = uart.set_attr(uart_attr);
+        if( ret < 0 ){
+            printf("%s>Failed to set attributes: %d (%d)\n", cli.name(), uart.error_number(), ret);
+        }
+    }
+
+    if( ret < 0 ){
+        exit(1);
+    }
 
 
-	buffer.set_capacity(256);
-	escape = "`exit`\n";
+    if( serial.open("/dev/link-phy-usb", Device::RDWR | Device::NONBLOCK) < 0 ){
+        printf("%s>Failed to open USB serial port\n", cli.name());
+        exit(1);
+    }
 
-	do {
-
-		if( (ret = serial.read(buffer.data(), buffer.capacity())) > 0 ){
-			uart.write(buffer.data_const(), ret);
-		}
-
-		if( escape == buffer ){
-			break;
-		}
-
-		buffer.clear();
-		if( (ret = uart.read(buffer.data(), buffer.capacity())) > 0 ){
-			serial.write(buffer.data_const(), ret);
-		}
+    serial.ioctl(I_FIFO_INIT);
 
 
-	} while( buffer != escape );
+    printf("%s>Stopping Link in 5 seconds\n", cli.name());
+    printf("%s>Type '`exit`\\n' to quit\n", cli.name());
+    ClockTime::wait_seconds(5);
 
 
-	pthread_kill(1, SIGCONT);
+    //stop the link thread
+    pthread_kill(1, SIGSTOP);
 
 
-	return 0;
+    buffer.set_capacity(256);
+    escape = "`exit`\n";
+
+    do {
+
+        buffer.clear();
+
+        if( (ret = serial.read(buffer.data(), buffer.capacity())) > 0 ){
+            uart.write(buffer.data_const(), ret);
+            if( is_echo ){
+                serial.write(buffer.data_const(), ret);
+            }
+        }
+
+        if( escape == buffer ){
+            break;
+        }
+
+        buffer.clear();
+        if( (ret = uart.read(buffer.data(), buffer.capacity())) > 0 ){
+            serial.write(buffer.data_const(), ret);
+        }
+
+
+    } while( buffer != escape );
+
+    String message;
+    message.sprintf("%s>`exit` escape received\n", cli.name());
+    serial.write(message);
+    message.sprintf("%s>exiting\n", cli.name(), cli.name());
+    serial.write(message);
+
+    pthread_kill(1, SIGCONT);
+
+
+    return 0;
+}
+
+void show_usage(const Cli & cli){
+    printf("%s usage:\n", cli.name());
+    printf("\t-uart <port>\n");
+    printf("\t-rx <port.pin>\n");
+    printf("\t-tx <port.pin>\n");
 }
